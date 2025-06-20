@@ -89,6 +89,7 @@
             margin-bottom: 10px;
             border: 1px solid #e2e8f0;
             transition: all 0.2s;
+            position: relative;
         }
 
         .factura-item:hover {
@@ -96,7 +97,29 @@
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         }
 
-        .factura-item .factura-header {
+        .factura-item.selected {
+            background: #ebf4ff;
+            border-color: #667eea;
+        }
+
+        .factura-checkbox {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .factura-checkbox input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .factura-content {
+            margin-left: 40px;
+        }
+
+        .factura-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -127,6 +150,19 @@
             color: #ed8936;
         }
 
+        .seleccionar-todas {
+            display: inline-block;
+            margin-bottom: 15px;
+            color: #667eea;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: underline;
+        }
+
+        .seleccionar-todas:hover {
+            color: #5a67d8;
+        }
+
         .total-section {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -153,49 +189,32 @@
             opacity: 0.8;
         }
 
-        .payment-methods {
-            margin-bottom: 30px;
-        }
-
-        .payment-methods h3 {
-            font-size: 18px;
-            color: #2d3748;
-            margin-bottom: 15px;
-        }
-
         .payment-button {
             display: block;
             width: 100%;
             padding: 18px;
-            margin-bottom: 12px;
-            background: white;
-            border: 2px solid #e2e8f0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
             border-radius: 8px;
-            font-size: 16px;
+            font-size: 18px;
             font-weight: 600;
-            color: #2d3748;
             text-decoration: none;
             text-align: center;
             transition: all 0.3s;
             cursor: pointer;
+            margin-bottom: 20px;
         }
 
-        .payment-button:hover {
-            border-color: #667eea;
-            color: #667eea;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
-        }
-
-        .payment-button.primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-        }
-
-        .payment-button.primary:hover {
+        .payment-button:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .payment-button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
         }
 
         .footer {
@@ -247,6 +266,17 @@
             height: 20px;
             vertical-align: middle;
         }
+
+        .aviso-redsys {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #718096;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -271,6 +301,10 @@
     </div>
 
     <script>
+        // Variables globales
+        let datosGlobales = null;
+        let facturasSeleccionadas = new Set();
+
         // Función para decodificar los datos de la URL
         function obtenerDatosDeURL() {
             const urlParams = new URLSearchParams(window.location.search);
@@ -317,12 +351,13 @@
             return null;
         }
 
-        // Función para formatear moneda
+        // Función para formatear moneda con separador de miles
         function formatearMoneda(cantidad) {
             return new Intl.NumberFormat('es-ES', {
-                style: 'currency',
-                currency: 'EUR'
-            }).format(cantidad);
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+                useGrouping: true
+            }).format(cantidad) + '€';
         }
 
         // Función para determinar si una factura está vencida
@@ -358,9 +393,94 @@
             return Math.round(diferencia / (1000 * 60 * 60 * 24));
         }
 
+        // Función para manejar la selección de facturas
+        function toggleFactura(index) {
+            if (facturasSeleccionadas.has(index)) {
+                facturasSeleccionadas.delete(index);
+            } else {
+                facturasSeleccionadas.add(index);
+            }
+            actualizarTotal();
+        }
+
+        // Función para seleccionar/deseleccionar todas
+        function toggleTodasFacturas() {
+            const checkboxes = document.querySelectorAll('.factura-checkbox input');
+            const todasSeleccionadas = facturasSeleccionadas.size === datosGlobales.facturas.length;
+            
+            if (todasSeleccionadas) {
+                facturasSeleccionadas.clear();
+                checkboxes.forEach(cb => cb.checked = false);
+            } else {
+                datosGlobales.facturas.forEach((_, index) => {
+                    facturasSeleccionadas.add(index);
+                });
+                checkboxes.forEach(cb => cb.checked = true);
+            }
+            
+            actualizarTotal();
+        }
+
+        // Función para actualizar el total
+        function actualizarTotal() {
+            let total = 0;
+            facturasSeleccionadas.forEach(index => {
+                total += datosGlobales.montos[index] || 0;
+            });
+            
+            document.getElementById('total-seleccionado').textContent = formatearMoneda(total);
+            
+            // Actualizar estado del botón
+            const botonPago = document.getElementById('boton-generar-pago');
+            botonPago.disabled = facturasSeleccionadas.size === 0;
+            
+            // Actualizar clases de facturas seleccionadas
+            document.querySelectorAll('.factura-item').forEach((item, index) => {
+                if (facturasSeleccionadas.has(index)) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
+
+        // Función para generar el pago
+        function generarPago() {
+            if (facturasSeleccionadas.size === 0) {
+                alert('Por favor, seleccione al menos una factura para pagar.');
+                return;
+            }
+            
+            // Calcular el total
+            let total = 0;
+            const facturasAPagar = [];
+            
+            facturasSeleccionadas.forEach(index => {
+                total += datosGlobales.montos[index] || 0;
+                facturasAPagar.push({
+                    numero: datosGlobales.facturas[index],
+                    monto: datosGlobales.montos[index]
+                });
+            });
+            
+            // Aquí iría la integración con Redsys
+            // Por ahora, mostramos un mensaje de demo
+            const mensaje = `DEMO - Redirigiendo a Redsys...\n\n` +
+                          `Cliente: ${datosGlobales.nombre}\n` +
+                          `Código: ${datosGlobales.codigo}\n` +
+                          `Total a pagar: ${formatearMoneda(total)}\n` +
+                          `Facturas: ${facturasAPagar.map(f => f.numero).join(', ')}`;
+            
+            alert(mensaje);
+            
+            // En producción, aquí se haría el POST a Redsys con los datos necesarios
+            // window.location.href = urlRedsys;
+        }
+
         // Función principal para mostrar los datos
         function mostrarDatos() {
             const datos = obtenerDatosDeURL();
+            datosGlobales = datos;
             const contentDiv = document.getElementById('content');
             
             if (!datos || !datos.facturas || datos.facturas.length === 0) {
@@ -374,11 +494,14 @@
                 return;
             }
 
+            // Pre-seleccionar todas las facturas
+            datos.facturas.forEach((_, index) => {
+                facturasSeleccionadas.add(index);
+            });
+
             // Separar facturas vencidas y próximas a vencer
             const facturasVencidas = [];
             const facturasProximas = [];
-            let totalVencidas = 0;
-            let totalProximas = 0;
 
             datos.facturas.forEach((factura, index) => {
                 const monto = datos.montos[index] || 0;
@@ -389,24 +512,27 @@
                     numero: factura,
                     monto: monto,
                     vencimiento: vencimiento,
-                    dias: dias
+                    dias: dias,
+                    index: index
                 };
                 
                 if (estaVencida(vencimiento)) {
                     facturasVencidas.push(facturaObj);
-                    totalVencidas += monto;
                 } else {
                     facturasProximas.push(facturaObj);
-                    totalProximas += monto;
                 }
             });
-
-            const totalGeneral = totalVencidas + totalProximas;
 
             let html = `
                 <div class="cliente-info">
                     <h2>${datos.nombre || 'Cliente'}</h2>
                     <p>Código: ${datos.codigo || 'N/A'}</p>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <span class="seleccionar-todas" onclick="toggleTodasFacturas()">
+                        Seleccionar/Deseleccionar todas
+                    </span>
                 </div>
             `;
 
@@ -423,13 +549,21 @@
                 facturasVencidas.forEach(factura => {
                     const diasRetraso = Math.abs(factura.dias);
                     html += `
-                        <div class="factura-item">
-                            <div class="factura-header">
-                                <span class="factura-numero">Factura ${factura.numero}</span>
-                                <span class="factura-monto">${formatearMoneda(factura.monto)}</span>
+                        <div class="factura-item selected">
+                            <div class="factura-checkbox">
+                                <input type="checkbox" 
+                                       id="factura-${factura.index}" 
+                                       checked
+                                       onchange="toggleFactura(${factura.index})">
                             </div>
-                            <div class="factura-vencimiento vencida">
-                                Venció el ${factura.vencimiento} (${diasRetraso} ${diasRetraso === 1 ? 'día' : 'días'} de retraso)
+                            <div class="factura-content">
+                                <div class="factura-header">
+                                    <span class="factura-numero">Factura ${factura.numero}</span>
+                                    <span class="factura-monto">${formatearMoneda(factura.monto)}</span>
+                                </div>
+                                <div class="factura-vencimiento vencida">
+                                    Venció el ${factura.vencimiento} (${diasRetraso} ${diasRetraso === 1 ? 'día' : 'días'} de retraso)
+                                </div>
                             </div>
                         </div>
                     `;
@@ -459,13 +593,21 @@
                     }
                     
                     html += `
-                        <div class="factura-item">
-                            <div class="factura-header">
-                                <span class="factura-numero">Factura ${factura.numero}</span>
-                                <span class="factura-monto">${formatearMoneda(factura.monto)}</span>
+                        <div class="factura-item selected">
+                            <div class="factura-checkbox">
+                                <input type="checkbox" 
+                                       id="factura-${factura.index}" 
+                                       checked
+                                       onchange="toggleFactura(${factura.index})">
                             </div>
-                            <div class="factura-vencimiento ${factura.dias <= 3 ? 'proxima' : ''}">
-                                ${textoVencimiento}
+                            <div class="factura-content">
+                                <div class="factura-header">
+                                    <span class="factura-numero">Factura ${factura.numero}</span>
+                                    <span class="factura-monto">${formatearMoneda(factura.monto)}</span>
+                                </div>
+                                <div class="factura-vencimiento ${factura.dias <= 3 ? 'proxima' : ''}">
+                                    ${textoVencimiento}
+                                </div>
                             </div>
                         </div>
                     `;
@@ -474,35 +616,28 @@
                 html += `</div>`;
             }
 
-            // Mostrar total
+            // Calcular total inicial
+            const totalInicial = datos.montos.reduce((a, b) => a + b, 0);
+
+            // Mostrar total y botón
             html += `
                 <div class="total-section">
                     <h3>Total a Pagar</h3>
-                    <div class="total-amount">${formatearMoneda(totalGeneral)}</div>
+                    <div class="total-amount" id="total-seleccionado">${formatearMoneda(totalInicial)}</div>
                     <p>IVA incluido</p>
                 </div>
 
-                <div class="payment-methods">
-                    <h3>Seleccione su método de pago:</h3>
-                    <button class="payment-button primary" onclick="procesarPago('tarjeta')">
-                        💳 Pagar con Tarjeta
-                    </button>
-                    <button class="payment-button" onclick="procesarPago('transferencia')">
-                        🏦 Transferencia Bancaria
-                    </button>
-                    <button class="payment-button" onclick="procesarPago('bizum')">
-                        📱 Bizum
-                    </button>
+                <button class="payment-button" id="boton-generar-pago" onclick="generarPago()">
+                    💳 Generar Pago
+                </button>
+
+                <div class="aviso-redsys">
+                    <p>Será redirigido a la pasarela de pago segura de Redsys</p>
+                    <p>para completar la transacción</p>
                 </div>
             `;
 
             contentDiv.innerHTML = html;
-        }
-
-        // Función para procesar el pago
-        function procesarPago(metodo) {
-            const datos = obtenerDatosDeURL();
-            alert(`Procesando pago por ${metodo}...\n\nEsta es una demostración.\nCliente: ${datos.nombre}\nTotal: ${formatearMoneda(datos.montos.reduce((a, b) => a + b, 0))}`);
         }
 
         // Inicializar cuando se carga la página
